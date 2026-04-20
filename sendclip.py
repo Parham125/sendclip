@@ -132,7 +132,7 @@ def user_host(target:str,user:str|None)->str:
 
 def resolve_remote_path(target:str,remote_dir:str,filename:str,user:str|None,password:str|None,port:int)->str:
     host=user_host(target,user)
-    remote_command="directory=$(eval printf '%s' {}); mkdir -p \"$directory\" && printf '%s/%s\\n' \"$directory\" {}".format(shlex.quote(remote_dir),shlex.quote(filename))
+    remote_command="directory={}; case \"$directory\" in '~') directory=\"$HOME\" ;; '~/'*) directory=\"$HOME/${{directory#~/}}\" ;; esac; mkdir -p \"$directory\" && printf '%s/%s\\n' \"$directory\" {}".format(shlex.quote(remote_dir),shlex.quote(filename))
     result=run_command(["ssh","-p",str(port),host,"sh","-lc",remote_command],password)
     if result.returncode==0:
         return result.stdout.decode().strip()
