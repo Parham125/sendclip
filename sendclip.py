@@ -186,9 +186,9 @@ def apply_alias(args:argparse.Namespace)->argparse.Namespace:
     return args
 
 
-def create_alias(args:argparse.Namespace)->int:
+def create_alias(args:argparse.Namespace,replace:bool=False)->int:
     data=ensure_config()
-    if args.alias_name in data["aliases"]:
+    if args.alias_name in data["aliases"] and not replace:
         raise RuntimeError(f"Alias already exists: {args.alias_name}")
     data["aliases"][args.alias_name]={
         "host":args.alias_host,
@@ -198,7 +198,7 @@ def create_alias(args:argparse.Namespace)->int:
         "password":args.alias_password,
     }
     save_config(data)
-    print(f"Created alias {args.alias_name}")
+    print(f"Updated alias {args.alias_name}" if replace else f"Created alias {args.alias_name}")
     return 0
 
 
@@ -227,10 +227,8 @@ def remove_alias(name:str)->int:
     return 0
 
 
-def parse_args()->argparse.Namespace:
-    parser=argparse.ArgumentParser(description="Upload the current clipboard image to a remote server and copy the remote path.")
-    subparsers=parser.add_subparsers(dest="command")
-    alias_parser=subparsers.add_parser("alias",help="Manage sendclip aliases")
+def build_alias_parser()->argparse.ArgumentParser:
+    alias_parser=argparse.ArgumentParser(description="Manage sendclip aliases.")
     alias_subparsers=alias_parser.add_subparsers(dest="alias_command")
     alias_create=alias_subparsers.add_parser("create",help="Create an alias")
     alias_create.add_argument("alias_name")
@@ -239,28 +237,49 @@ def parse_args()->argparse.Namespace:
     alias_create.add_argument("alias_remote_dir")
     alias_create.add_argument("--port",dest="alias_port",type=int,default=22)
     alias_create.add_argument("--password",dest="alias_password")
+    alias_update=alias_subparsers.add_parser("update",help="Update or replace an alias")
+    alias_update.add_argument("alias_name")
+    alias_update.add_argument("alias_host")
+    alias_update.add_argument("alias_user")
+    alias_update.add_argument("alias_remote_dir")
+    alias_update.add_argument("--port",dest="alias_port",type=int,default=22)
+    alias_update.add_argument("--password",dest="alias_password")
     alias_subparsers.add_parser("list",help="List aliases")
     alias_subparsers.add_parser("ls",help="List aliases")
     alias_rm=alias_subparsers.add_parser("rm",help="Remove an alias")
     alias_rm.add_argument("name")
     alias_remove=alias_subparsers.add_parser("remove",help="Remove an alias")
     alias_remove.add_argument("name")
-    parser.add_argument("target",nargs="?",help="Alias or host to upload to")
+    return alias_parser
+
+
+def build_upload_parser()->argparse.ArgumentParser:
+    parser=argparse.ArgumentParser(description="Upload the current clipboard image to a remote server and copy the remote path.")
+    parser.add_argument("target",help="Alias or host to upload to")
     parser.add_argument("remote_dir",nargs="?",help="Remote directory when not using an alias with a stored path")
     parser.add_argument("--user")
     parser.add_argument("--port",type=int)
     parser.add_argument("--password")
     parser.add_argument("--prefix",default="clip")
     parser.add_argument("--name")
-    args=parser.parse_args()
-    if args.command=="alias":
-        if not args.alias_command:
+    return parser
+
+
+def parse_args()->argparse.Namespace:
+    argv=sys.argv[1:]
+    if not argv:
+        build_upload_parser().print_help()
+        raise SystemExit(1)
+    if argv[0]=="alias":
+        alias_parser=build_alias_parser()
+        if len(argv)==1:
             alias_parser.print_help()
-            parser.exit(1)
+            raise SystemExit(1)
+        args=alias_parser.parse_args(argv[1:])
+        args.command="alias"
         return args
-    if not args.target:
-        parser.print_help()
-        parser.exit(1)
+    args=build_upload_parser().parse_args(argv)
+    args.command=None
     return args
 
 
@@ -293,6 +312,8 @@ def main()->int:
                 return list_aliases()
             if args.alias_command=="create":
                 return create_alias(args)
+            if args.alias_command=="update":
+                return create_alias(args,replace=True)
             if args.alias_command in {"rm","remove"}:
                 return remove_alias(args.name)
         return upload(args)
