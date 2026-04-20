@@ -3,6 +3,7 @@ import argparse
 import json
 import os
 import shutil
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -129,10 +130,21 @@ def user_host(target:str,user:str|None)->str:
     return target if "@" in target or not user else f"{user}@{target}"
 
 
+def quote_remote_dir(remote_dir:str)->str:
+    if remote_dir=="~":
+        return '"$HOME"'
+    if remote_dir.startswith("~/"):
+        suffix=remote_dir[2:]
+        return '"$HOME"/'+shlex.quote(suffix) if suffix else '"$HOME"'
+    return shlex.quote(remote_dir)
+
+
 def resolve_remote_path(target:str,remote_dir:str,filename:str,user:str|None,password:str|None,port:int)->str:
     host=user_host(target,user)
-    remote_command='directory="$1"; filename="$2"; case "$directory" in "~") directory="$HOME" ;; "~/"*) directory="$HOME/${directory#~/}" ;; esac; mkdir -p -- "$directory" && printf "%s/%s\\n" "$directory" "$filename"'
-    result=run_command(["ssh","-p",str(port),host,"sh","-lc",remote_command,"sh",remote_dir,filename],password)
+    quoted_dir=quote_remote_dir(remote_dir)
+    quoted_name=shlex.quote(filename)
+    remote_command=f'directory={quoted_dir}; filename={quoted_name}; mkdir -p -- "$directory" && printf "%s/%s\\n" "$directory" "$filename"'
+    result=run_command(["ssh","-p",str(port),host,f"sh -lc {shlex.quote(remote_command)}"],password)
     if result.returncode==0:
         return result.stdout.decode().strip()
     message=result.stderr.decode().strip() or result.stdout.decode().strip() or "Unknown ssh error"
