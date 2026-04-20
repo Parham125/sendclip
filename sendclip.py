@@ -3,6 +3,7 @@ import argparse
 import json
 import os
 import shutil
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -130,13 +131,13 @@ def user_host(target:str,user:str|None)->str:
 
 
 def resolve_remote_path(target:str,remote_dir:str,filename:str,user:str|None,password:str|None,port:int)->str:
-    script="import os,sys; directory=os.path.expanduser(sys.argv[1]); os.makedirs(directory,exist_ok=True); print(os.path.join(directory,sys.argv[2]))"
     host=user_host(target,user)
-    for interpreter in ("python3","python"):
-        result=run_command(["ssh","-p",str(port),host,interpreter,"-c",script,remote_dir,filename],password)
-        if result.returncode==0:
-            return result.stdout.decode().strip()
-    raise RuntimeError(f"Failed to resolve remote path on {host}. Ensure ssh access works, the password is correct, and Python is installed remotely.")
+    remote_command="directory=$(eval printf '%s' {}); mkdir -p \"$directory\" && printf '%s/%s\\n' \"$directory\" {}".format(shlex.quote(remote_dir),shlex.quote(filename))
+    result=run_command(["ssh","-p",str(port),host,"sh","-lc",remote_command],password)
+    if result.returncode==0:
+        return result.stdout.decode().strip()
+    message=result.stderr.decode().strip() or result.stdout.decode().strip() or "Unknown ssh error"
+    raise RuntimeError(f"Failed to resolve remote path on {host}:{port}: {message}")
 
 
 def upload_file(target:str,local_path:Path,remote_path:str,user:str|None,password:str|None,port:int)->None:
